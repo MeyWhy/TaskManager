@@ -1,59 +1,71 @@
 
 package com.taskmanager.taskmanager_api.service;
 
-import java.util.List;
-
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.taskmanager.taskmanager_api.Task;
+import com.taskmanager.taskmanager_api.User;
 import com.taskmanager.taskmanager_api.exception.TaskNotFoundException;
 import com.taskmanager.taskmanager_api.repository.TaskRepository;
+import com.taskmanager.taskmanager_api.repository.UserRepository;
 
 @Service
 public class TaskService {
 
-    private final TaskRepository repository;
+    private final TaskRepository taskRepository;
+    private final UserRepository userRepository;
 
-    public TaskService(TaskRepository repository) {
-        this.repository = repository;
+    public TaskService(
+            TaskRepository taskRepository,
+            UserRepository userRepository) {
+        this.taskRepository = taskRepository;
+        this.userRepository = userRepository;
     }
 
-    public List<Task> getAllTasks() {
-        return repository.findAll();
-    }
+    public Page<Task> getTasks(
+            String username, Pageable pageable, Boolean completed) {
 
-    public Page<Task> getTasks(Pageable pageable, Boolean completed) {
-        if (completed != null) {
-            return repository.findByCompleted(completed, pageable);
+        if (completed == null) {
+            return taskRepository.findByOwner_Username(username, pageable);
         }
 
-        return repository.findAll(pageable);
+        return taskRepository.findByOwner_UsernameAndCompleted(
+                username, completed, pageable);
     }
 
-    public Task getTaskById(Long id) {
-        return repository.findById(id)
+    public Task getTaskById(Long id, String username) {
+        return taskRepository.findByIdAndOwner_Username(id, username)
                 .orElseThrow(() -> new TaskNotFoundException(id));
     }
 
-    public Task createTask(Task task) {
-        task.setId(null);
-        return repository.save(task);
+    @Transactional
+    public Task createTask(Task task, String username) {
+        User owner = userRepository.findByUsername(username)
+                .orElseThrow(() ->
+                        new org.springframework.security.core.userdetails
+                                .UsernameNotFoundException("User not found"));
+
+        task.setOwner(owner);
+        return taskRepository.save(task);
     }
 
-    public Task updateTask(Long id, Task updatedTask) {
-        Task existingTask = getTaskById(id);
+    @Transactional
+    public Task updateTask(Long id, Task updatedTask, String username) {
+        Task existingTask = getTaskById(id, username);
 
         existingTask.setTitle(updatedTask.getTitle());
         existingTask.setDescription(updatedTask.getDescription());
         existingTask.setCompleted(updatedTask.isCompleted());
 
-        return repository.save(existingTask);
+        return taskRepository.save(existingTask);
     }
 
-    public void deleteTask(Long id) {
-        Task task = getTaskById(id);
-        repository.delete(task);
+    @Transactional
+    public void deleteTask(Long id, String username) {
+        Task task = getTaskById(id, username);
+        taskRepository.delete(task);
     }
 }

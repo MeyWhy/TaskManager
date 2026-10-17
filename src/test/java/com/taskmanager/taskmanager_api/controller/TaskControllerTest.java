@@ -4,8 +4,12 @@ package com.taskmanager.taskmanager_api.controller;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -16,98 +20,134 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import com.taskmanager.taskmanager_api.Task;
+import com.taskmanager.taskmanager_api.config.JwtAuthenticationFilter;
 import com.taskmanager.taskmanager_api.exception.GlobalExceptionHandler;
 import com.taskmanager.taskmanager_api.exception.TaskNotFoundException;
 import com.taskmanager.taskmanager_api.service.TaskService;
+import com.taskmanager.taskmanager_api.service.JwtService;
+import org.springframework.security.core.userdetails.UserDetailsService;
 
 @WebMvcTest(TaskController.class)
+@AutoConfigureMockMvc(addFilters = false)
 @Import(GlobalExceptionHandler.class)
 class TaskControllerTest {
-
+private RequestPostProcessor asAlice() {
+    return request -> {
+        request.setUserPrincipal(aliceAuthentication());
+        return request;
+    };
+}
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
     private TaskService service;
 
-@Test
-void getAllTasksShouldReturn200AndJson() throws Exception {
-    Task task = new Task(
-        1L,
-        "Learn Spring",
-        "Practice REST APIs",
-        false
-    );
+    @MockitoBean
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    Pageable pageable = PageRequest.of(
-        0, 10, Sort.by(Sort.Direction.DESC, "id")
-    );
+    @MockitoBean
+    private JwtService jwtService;
 
-    when(service.getTasks(any(Pageable.class), any()))
-        .thenReturn(new PageImpl<>(List.of(task), pageable, 1));
+    @MockitoBean
+    private UserDetailsService userDetailsService;
 
-    mockMvc.perform(get("/api/tasks"))
-        .andExpect(status().isOk())
-        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.content[0].id").value(1))
-        .andExpect(jsonPath("$.content[0].title").value("Learn Spring"))
-        .andExpect(jsonPath("$.content[0].completed").value(false))
-        .andExpect(jsonPath("$.totalElements").value(1))
-        .andExpect(jsonPath("$.totalPages").value(1))
-        .andExpect(jsonPath("$.number").value(0));
-}
+    private UsernamePasswordAuthenticationToken aliceAuthentication() {
+        return new UsernamePasswordAuthenticationToken(
+                "alice",
+                "password",
+                AuthorityUtils.createAuthorityList("ROLE_USER"));
+    }
+
+    @Test
+    void getAllTasksShouldReturn200AndJson() throws Exception {
+        Task task = new Task(
+                1L,
+                "Learn Spring",
+                "Practice REST APIs",
+                false);
+
+        Pageable pageable = PageRequest.of(
+                0, 10, Sort.by(Sort.Direction.DESC, "id"));
+
+when(service.getTasks(
+        eq("alice"),
+        any(Pageable.class),
+        org.mockito.ArgumentMatchers.isNull()))
+    .thenReturn(new PageImpl<>(List.of(task), pageable, 1));
+
+        mockMvc.perform(get("/api/tasks")
+                        .with(asAlice()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.content[0].id").value(1))
+                .andExpect(jsonPath("$.content[0].title").value("Learn Spring"))
+                .andExpect(jsonPath("$.content[0].completed").value(false))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.totalPages").value(1))
+                .andExpect(jsonPath("$.number").value(0));
+    }
 
     @Test
     void createTaskShouldReturn201AndCreatedTask() throws Exception {
-        when(service.createTask(any(Task.class))).thenReturn(
-            new Task(1L, "Learn Spring", "Practice REST APIs", false)
-        );
-
+        when(service.createTask(any(Task.class), eq("alice")))
+                .thenReturn(new Task(
+                        1L, "Learn Spring", "Practice REST APIs", false));
+org.junit.jupiter.api.Assertions.assertEquals(
+    "alice", aliceAuthentication().getName());
         mockMvc.perform(post("/api/tasks")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                    {
-                        "title": "Learn Spring",
-                        "description": "Practice REST APIs",
-                        "completed": false
-                    }
-                    """))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.id").value(1))
-            .andExpect(jsonPath("$.title").value("Learn Spring"))
-            .andExpect(jsonPath("$.completed").value(false));
+                        .with(asAlice())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                                "title": "Learn Spring",
+                                "description": "Practice REST APIs",
+                                "completed": false
+                            }
+                            """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.title").value("Learn Spring"))
+                .andExpect(jsonPath("$.completed").value(false));
     }
 
     @Test
     void createTaskShouldReturn400WhenTitleIsBlank() throws Exception {
         mockMvc.perform(post("/api/tasks")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                    {
-                        "title": "   ",
-                        "description": "A task without a valid title",
-                        "completed": false
-                    }
-                    """))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.status").value(400))
-            .andExpect(jsonPath("$.details").isArray());
+                        .with(asAlice())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                                "title": "   ",
+                                "description": "A task without a valid title",
+                                "completed": false
+                            }
+                            """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.details").isArray());
     }
 
     @Test
     void getTaskByIdShouldReturn404WhenTaskDoesNotExist() throws Exception {
-        when(service.getTaskById(99L))
-            .thenThrow(new TaskNotFoundException(99L));
+        when(service.getTaskById(99L, "alice"))
+                .thenThrow(new TaskNotFoundException(99L));
 
-        mockMvc.perform(get("/api/tasks/99"))
-            .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.status").value(404));
+        mockMvc.perform(get("/api/tasks/99")
+                        .with(asAlice()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404));
     }
 }

@@ -10,6 +10,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.taskmanager.taskmanager_api.exception.ApiError;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -32,6 +33,27 @@ public class GlobalExceptionHandler {
                 details
         );
     }
+
+@ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
+public ResponseEntity<ApiError> handleBadCredentials(
+        org.springframework.security.authentication.BadCredentialsException exception) {
+    return buildError(
+            HttpStatus.UNAUTHORIZED,
+            "Invalid username or password",
+            List.of()
+    );
+}
+
+@ExceptionHandler(IllegalArgumentException.class)
+public ResponseEntity<ApiError> handleIllegalArgument(
+        IllegalArgumentException exception) {
+
+    return buildError(
+            HttpStatus.CONFLICT,
+            exception.getMessage(),
+            List.of()
+    );
+}
 
     @ExceptionHandler(TaskNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(
