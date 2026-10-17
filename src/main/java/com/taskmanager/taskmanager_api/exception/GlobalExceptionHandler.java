@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -20,34 +21,64 @@ public class GlobalExceptionHandler {
         List<String> details = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
-                .map(error ->
-                    error.getField() + ": " + error.getDefaultMessage())
+                .map(error -> error.getField() + ": "
+                        + error.getDefaultMessage())
                 .distinct()
                 .toList();
 
-        ApiError body = new ApiError(
-                Instant.now(),
-                400,
-                "Bad Request",
+        return buildError(
+                HttpStatus.BAD_REQUEST,
                 "Request validation failed",
                 details
         );
-
-        return ResponseEntity.badRequest().body(body);
     }
 
     @ExceptionHandler(TaskNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(
             TaskNotFoundException ex) {
 
-        ApiError body = new ApiError(
-                Instant.now(),
-                404,
-                "Not Found",
+        return buildError(
+                HttpStatus.NOT_FOUND,
                 ex.getMessage(),
                 List.of()
         );
+    }
 
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> handleInvalidBody(
+            HttpMessageNotReadableException ex) {
+
+        return buildError(
+                HttpStatus.BAD_REQUEST,
+                "Request body is missing or contains invalid JSON",
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleUnexpectedError(
+            Exception ex) {
+
+        return buildError(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "An unexpected error occurred",
+                List.of()
+        );
+    }
+
+    private ResponseEntity<ApiError> buildError(
+            HttpStatus status,
+            String message,
+            List<String> details) {
+
+        ApiError body = new ApiError(
+                Instant.now(),
+                status.value(),
+                status.getReasonPhrase(),
+                message,
+                details
+        );
+
+        return ResponseEntity.status(status).body(body);
     }
 }
